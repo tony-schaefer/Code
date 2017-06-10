@@ -1,0 +1,43 @@
+#!/bin/bash
+
+qsub <<  eof
+#$ -S /bin/bash
+#$ -q all.q
+#$ -N WHAM
+#$ -l h_rt=999:00:00
+#$ -pe mpi 1
+#$ -cwd
+#$ -j y
+#$ -o Run.log 
+
+echo "GAMESS job running on the following processors:" > $JOBNAME.out
+cat \$PE_HOSTFILE >> $JOBNAME.out
+
+module load gromacs/gromacs-5.1/
+export GMXLIB=/home/scha0275/gromacs/top/
+
+export SCR=/scr/$USER/\$JOB_ID
+mkdir \$SCR
+export TMPDIR=\$SCR
+
+
+echo "Starting GROMACS Job!" >> $JOBNAME.out
+
+cp \$SGE_O_WORKDIR/* \$TMPDIR/
+
+cd \$TMPDIR 
+
+gmx wham -bs-method b-hist -bins 50 -nBootstrap 200 -it tpr-files.dat -if pullf-files.dat -nt 1 
+
+cp \$TMPDIR/* \$SGE_O_WORKDIR
+
+
+
+
+/bin/rm -r \$SCR
+
+
+
+echo "GROMACS Job Finished!" >> $JOBNAME.out
+
+eof

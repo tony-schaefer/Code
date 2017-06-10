@@ -1,0 +1,59 @@
+#!/bin/bash
+
+JOBNAME="AMBRO"
+
+NAME="AMBRO"
+
+NUMPROC=$1
+
+if [ "$2" != "" ] ; then
+  NAME=$2
+fi
+
+#echo "mpirun pmemd.MPI -O -i minimization.in -o minimization.out -p HEXANE_NMoleculesSolvated.prmtop -c HEXANE_NMoleculesSolvated.inpcrd -r minrestart.rst >> $JOBNAME.out" > cmd.file
+echo "mpirun sander.MPI -ng 2 -groupfile mini.file"  >  cmd.file
+echo "mpirun sander.MPI -ng 2 -groupfile group.file" >> cmd.file
+
+node=`/home/scha0275/program-workshop/python2.7/queso.py none $NUMPROC`
+
+qsub <<  eof
+#$ -S /bin/bash
+#$ -N "$NAME"
+#$ -q $node
+#$ -l h_rt=999:00:00
+#$ -pe mpi $NUMPROC 
+#$ -cwd
+#$ -j y
+#$ -o Run.log 
+
+echo "AMBRO job running on the following processors:" > $JOBNAME.out
+cat \$PE_HOSTFILE >> $JOBNAME.out
+
+module load amber >> $JOBNAME.out
+
+export AMBERHOME=/share/apps/amber16 >> $JOBNAME.out
+
+export SCR=/scr/$USER/\$JOB_ID >> $JOBNAME.out
+mkdir \$SCR >> $JOBNAME.out
+export TMPDIR=\$SCR >> $JOBNAME.out
+
+echo "Starting AMBER Job!" >> $JOBNAME.out
+echo "$NUMPROC procs" >> $JOBNAME.out
+cp \$SGE_O_WORKDIR/* \$TMPDIR/ >> $JOBNAME.out
+
+cd \$TMPDIR >> $JOBNAME.out
+
+mpirun -np $NUMPROC sander.MPI -ng 2 -groupfile mini.file
+mpirun -np $NUMPROC sander.MPI -ng 2 -groupfile group.file
+#/home/scha0275/program-workshop/python2.7/./pynscheduling.py type=mpi procs=$NUMPROC starting jid=\$JOB_ID cmd=cmd.file
+
+#mpirun -np $NUMPROC sander.MPI -ng 2 -groupfile mini.file
+#mpirun -np $NUMPROC sander.MPI -ng 2 -groupfile group.file
+
+cp \$TMPDIR/* \$SGE_O_WORKDIR 
+
+/bin/rm -r \$SCR
+
+echo "AMBRO Job Finished!" >> $JOBNAME.out
+
+eof

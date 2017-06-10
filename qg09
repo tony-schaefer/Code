@@ -1,0 +1,124 @@
+#!/bin/bash
+
+if [ $# -lt 1 ]; then
+    echo "Usage: $0 jobfile [nproc]"
+    exit 0
+fi
+
+node="all.q@compute-0-13.local,all.q@compute-0-14.local,all.q@compute-0-15.local"
+
+if [ $2 != "" ] 2>/dev/null && [ -f $1 ] ; then
+    sed -i "s/\%n.*=.*/\%NProcShared=$2/I" $1 
+elif [ $2 != "" ] 2>/dev/null && [ -f $1".com" ] ; then
+sed -i "s/\%n.*=.*/\%NProcShared=$2/I" $1".com"
+fi
+
+if [ -f $1 ] ; then
+    procline=`grep -i "%N.*=" $1`
+    NUMPROC=${procline##*=}
+elif [ -f $1.com ] ; then
+    procline=`grep -i "%N.*=" $1.com`
+    NUMPROC=${procline##*=}
+else
+    NUMPROC=$2
+fi
+
+declare "JOBNAME=`echo $1 | sed s/.com//g`"
+
+if [ -f $1 ]; then
+  scratch=`grep -i maxdisk $1`
+  scratch=${scratch##*maxdisk=}
+  scratch=${scratch%%gb*}
+else
+  scratch=`grep -i maxdisk $1.com`
+  scratch=${scratch##*maxdisk=}
+  scratch=${scratch%%gb*}
+fi 
+
+if [ -f Default.Route ] ; then
+ scratch=`grep -i maxdisk Default.Route`
+ scratch=${scratch##*maxdisk=}
+ scratch=${scratch%%gb*}
+fi
+
+if [ "$scratch" == "" ] ; then
+  scratch=50
+fi
+
+echo "scratch set to $scratch gb"
+
+echo "g09 $JOBNAME.com " > cmd.file
+
+node=`/home/scha0275/program-workshop/python2.7/./queso.py givescratch $NUMPROC`
+
+echo submitting to $node
+
+qsub << eof
+#$ -S /bin/bash
+#$ -q $node
+#$ -N $JOBNAME              
+#$ -pe default $NUMPROC
+#$ -j y
+#$ -o Run.log
+#$ -cwd
+
+module load gaussian
+
+# scratch specific for nodes        
+export SCRDIR="/scr/$USER/\$JOB_ID"
+
+echo SCRDIR \$SCRDIR
+
+export GAUSS_SCRDIR=\$SCRDIR 
+
+# make scratch directory and parents
+mkdir -p \$SCRDIR
+
+# goto work
+cd \$SGE_O_WORKDIR
+
+# copy input files to scratc
+cp $JOBNAME.com \$SCRDIR 
+cp cmd.file \$SCRDIR 
+
+if [ -f Default.Route ] ; then
+  cp Default.Route \$SCRDIR
+fi
+
+# goto scratch
+cd \$SCRDIR
+
+echo ""
+echo "---------------------------------------------------------------------------"
+echo ""
+echo "Starting Gaussian " $JOBNAME " with \$NSLOTS processors. "
+echo "Running on " \$HOSTNAME
+echo ""
+echo "---------------------------------------------------------------------------"
+echo ""
+echo "Date: " `date`
+echo ""
+echo "---------------------------------------------------------------------------"
+echo ""
+
+
+/home/scha0275/program-workshop/python2.7/./pynscheduling.py type=g09 procs=$NUMPROC starting jid=\$JOB_ID cmd=cmd.file 
+
+cp * \$SGE_O_WORKDIR
+
+# remove scratch directory
+rm -r \$SCRDIR
+
+echo ""
+echo "---------------------------------------------------------------------------"
+echo ""
+echo "Job is finished."
+echo ""
+echo "---------------------------------------------------------------------------"
+echo ""
+echo "Date: " `date`
+echo ""
+echo "---------------------------------------------------------------------------"
+echo ""
+
+eof

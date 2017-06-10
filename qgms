@@ -1,0 +1,59 @@
+#!/bin/bash
+
+if [ $# -lt 2 ]; then
+ echo "Usage: $0 [jobname] [nproc]"
+ exit 0
+fi
+
+if [ -f $1 ]; then
+ declare "JOBNAME=`echo $1 | sed s/.inp//g`"
+else
+ JOBNAME=$1
+fi
+
+if [ -f $JOBNAME.dat ] ; then
+  rm $JOBNAME.dat
+fi
+
+node="all.q@compute-0-13.local,all.q@compute-0-14.local,all.q@compute-0-15.local"
+
+#scratch=`grep -i MWORDS $JOBNAME.inp`
+#scratch=${scratch##*MWORDS=}
+#scratch=( $scratch )
+#scratch=${scratch[0]}
+
+#if [ "$scratch" == "" ] ; then
+scratch=100
+#else
+#  scratch=$((1+scratch/134))
+#fi
+
+NUMPROC=$2
+node=`/home/scha0275/program-workshop/python2.7/./queso.py givescratch $NUMPROC`
+echo $node
+qsub <<  eof
+#$ -S /bin/bash
+#$ -q $node
+#$ -N $JOBNAME
+#$ -l h_rt=999:00:00
+#$ -pe mpi $NUMPROC 
+#$ -cwd
+#$ -j y
+#$ -o Run.log 
+
+echo "Playing GAMESS on the following processors:" > $JOBNAME.out
+cat \$PE_HOSTFILE >> $JOBNAME.out
+
+module load gamess
+
+export SCR=/scr/$USER/\$JOB_ID
+mkdir \$SCR
+export TMPDIR=\$SCR
+echo "Starting GAMESS Job!" >> $JOBNAME.out
+rungms $JOBNAME.inp $NUMPROC >& $JOBNAME.log 
+cp \$TMPDIR/$JOBNAME.dat \$SGE_O_WORKDIR
+/bin/rm -r \$SCR
+
+echo "GAMESS Job Finished!" >> $JOBNAME.out
+
+eof
