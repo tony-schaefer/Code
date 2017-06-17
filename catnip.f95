@@ -2,15 +2,16 @@
 
       use IFPORT
 ! comment ^ out if not using ifort
+! need IFPORT to make system calls
 ! ifort -Tf catnip.f95 -free -Ofast -o catnip.e -fpe0
 ! gfortran catnip.f95 -Ofast -o catnip.e
       implicit none
 
-      logical:: help,ential,grid,mute
+      logical:: help,ential,grid,mute,warn,found
       real, allocatable:: xyz(:,:),nxyz(:,:),tryxyz(:,:)
       real:: dist,c1,c2,com1,com2,box(3),bot,top,cx,cy,cz,randumb,psi,&
       theta,dxyz(3),a1,a2,a3,b1,b2,b3,nb,whattimeisit,a,b,c,&
-      gridbox(1000000,3)
+      gridbox(1000000,3),cent1,cent2,cent3
       double precision:: R(3,3),dx,dy,dz,pie,vx,vy,vz
       integer:: i,j,k,l,m,n,o,tries,attempt,boxatoms,newatoms,lim,&
       ilist(8),deleted,groups,molsofthat,nextatom,nextmol,igroup,&
@@ -26,6 +27,8 @@
       help=.False.
       grid=.False.
       mute=.False.
+      warn=.False.
+      found=.False.
       brexit=0
 
       if(iargc().lt.3) help=.True.
@@ -39,7 +42,8 @@
       outtop="catnip.top"
 ! default outs
       dlist=" "
-      ndxfile="index.ndx"
+      ndxfile="index.file"
+! default index file
       agroup="-1"
       tries=-1
       g1="6.02"
@@ -47,6 +51,7 @@
       axis='z'
 
       do i=1,iargc()
+! read command line stuff 
         call getarg(i,str)
         if(str.eq."-c") then
           call getarg(i+1,boxfile)
@@ -73,6 +78,7 @@
         if(str.eq."-g") then
           call getarg(i+1,agroup)
           if(agroup.eq."interface") then
+            found=.True.
             call getarg(i+2,g1)
             call getarg(i+3,g2)
             if(i+4.le.iargc()) call getarg(i+4,axis)
@@ -92,9 +98,9 @@
           exit
         endif
       enddo
-! read command line stuff 
 
       open(1,file="/dev/stdout")
+! unit 1 is the default out
 
       if(help) then
         str=adjustl("")
@@ -128,7 +134,7 @@
         str=adjustl("-g   : [ optional | prompted ] group name, number,&
           & or 'interface RES1 (or ceil) RES2 x||y||z' or 'grid'")
         write(1,9) str
-        str=adjustl("-ndx : [ optional | index.ndx ] specify index &
+        str=adjustl("-ndx : [ optional | index.file ] specify index &
           &file")
         write(1,9) str
         str=adjustl("-mute: suppress output")
@@ -138,14 +144,16 @@
         goto 97
       endif 
 ! useful info ^
+! gets printed if the user needs help on how to use the program
       
       pie=dacos(dble(-1.))
- 
+! i like pie
+
       do while(tries.lt.0) 
         write(1,*) "How many to add?"
         read(5,*) tries
       enddo
-! if not given a command line option, it will ask how many to add
+! if not given on the command line, it will ask how many to add
 
       inquire(file=dlist,exist=ential)
 
@@ -169,6 +177,7 @@
 
         close(12)
 ! read file for removable molecules
+! should have one molecule per line
       else
 
         n=1
@@ -202,6 +211,16 @@
       inquire(file=ndxfile,exist=ential)
 
       if(.not.ential.and..not.grid) then
+        inquire(file="index.ndx",exist=ential)
+        if(ential.and.ndxfile.ne."index.ndx") then
+          if(.not.mute)&
+            write(1,*) "removing old index file"
+          lugicul=system("rm index.ndx")
+! want to remove old indexes because if the program is run multiple
+! times in a row, the old index might not correspond to the current
+! system
+! removing index.ndx because that is the default out of gmx make_ndx
+        endif
         if(.not.mute)&
             write(1,*)"generating index file"
         str="echo q | gmx -quiet make_ndx -f "//trim(boxfile)//"&
@@ -248,6 +267,7 @@
           str=adjustl(str)
           if(str(1:1).eq.'[') then
             if(groups.eq.igroup.or.str.eq.agroup) then
+              found=.True.
               do
                 read(6,'(a)',iostat=ios) str
                 str=adjustl(str)
@@ -290,15 +310,19 @@
         enddo
 ! read index file and members of the group specified
 
-        if(.not.allocated(groupies).and.agroup.ne.'-1') then
+        if(.not.allocated(groupies).and.agroup.ne."-1") then
           if(.not.mute)&
             write(1,*) trim(agroup)," not found in index"
         endif
 ! say if the selected group wasn't found
-        if(agroup.eq."-1") then
+        if(.not.found) then
           write(1,*) "Which group?"
 ! ask if group is not found in index
           read(*,*) agroup
+          if(agroup.eq.'grid') then
+            grid=.True.
+            found=.True.
+          endif
           if(agroup.eq."interface") then
             write(1,*) "interface group 1:"
             read(*,*) g1
@@ -307,6 +331,7 @@
             write(1,*) "axis:"
             read(*,*) axis
             agroup="[ interface ]"
+            found=.True.
           else
             groups=0
             rewind(6)
@@ -326,6 +351,8 @@
         read(7,'(a)') str
         read(7,*) boxatoms
       else
+      ! if the extension is 'gro', it is a gromacs file
+      ! otherwise, assume it is a pdb file (and not a trajectory)
         boxatoms=0
         do
           read(7,'(a)',iostat=ios) str
@@ -343,6 +370,8 @@
         brexit=1
         goto 97
       endif
+
+      close(7)
 
       molfile=adjustr(molfile)
       fn=molfile(87:90)
@@ -369,9 +398,13 @@
        newatoms),atres(boxatoms+tries*newatoms),atnum(boxatoms+tries*&
        newatoms),xyz(boxatoms+tries*newatoms,3),catdel(boxatoms))
 
+      open(7,file=boxfile)
+
       catdel(:)=-1
 ! catdel is the list of deleted molecules
       if(fi.eq.'.gro') then
+        read(7,*) str
+        read(7,*) str
         do i=1,boxatoms
           read(7,99) molnum(i),molres(i),atres(i),atnum(i),&
             (xyz(i,j),j=1,3)
@@ -423,7 +456,7 @@
 ! create a grid of points, 100 along each axis, across the entire box
 
       if(verify(axis,'xyz').ne.0) then
-        write(1,*) "enter axis (x, y, or z)"
+        write(1,*) "enter axis orthogonal to interface (x, y, or z)"
         read(*,*) axis
 ! ask about the axis if it isn't x, y, or z
       endif
@@ -599,7 +632,7 @@
                   psi=0.
                 endif
  
-                if(c.le.0.1.or.psi.eq.0.) then
+                if(c.le.0.1.or.psi.eq.0..or.newatoms.eq.1) then
 ! if they are less than 0.3 apart, translate. rotate otherwise.
                   if(abs(xyz(i,1)-tryxyz(l,1)).gt.abs(box(1)-&
                     abs(xyz(i,1)-tryxyz(l,1)))) then
@@ -635,7 +668,9 @@
                   do j=1,3
                     nb=nb+dxyz(j)**2
                   enddo
-                  if(nb.ne.0.) then
+                  if(nb.gt.0.0001) then
+! can sometimes get floating point error here that will throw the new
+! molecule very far away from the box if i only check if nb != 0.0
                     do j=1,3
                      dxyz(j)=dxyz(j)/(nb)
                     enddo
@@ -663,7 +698,7 @@
                   vy=-(a1*b3)+(a3*b1)
                   vz=(a1*b2)-(a2*b1)
                   nb=sqrt(vx**2+vy**2+vz**2)
-                  if(nb.ne.0.) then
+                  if(nb.gt.0.001) then
                     vx=vx/nb
                     vy=vy/nb
                     vz=vz/nb
@@ -672,6 +707,7 @@
                     vy=0.0
                     vz=0.0
                   endif
+                  nb=sqrt(vx**2+vy**2+vz**2)
 ! find unit vector parallel to axis of rotation
 ! if the atoms are on top of each other, use the x axis
 
@@ -718,13 +754,56 @@
                 i=0
                 l=0
                 attempt=attempt+1
+              
+                cent1=0.
+                cent2=0.
+                cent3=0.
+  
+                do j=1,newatoms
+!find the center of the new molecule
+                  cent1=cent1+tryxyz(j,1)/float(newatoms)
+                  cent2=cent2+tryxyz(j,2)/float(newatoms)
+                  cent3=cent3+tryxyz(j,3)/float(newatoms)
+                enddo
+           
+                do j=1,newatoms
+!move the new molecule back inside the box if the center
+!is outside of it
+                  if(cent1.lt.0.) then
+                    tryxyz(j,1)=tryxyz(j,1)+float(max(1,1-&
+                      int(tryxyz(j,1))/int(box(1))))*box(1)
+                  endif
+                  if(cent2.lt.0.) then
+                    tryxyz(j,2)=tryxyz(j,2)+float(max(1,1-&
+                      int(tryxyz(j,2))/int(box(2))))*box(2)
+                  endif
+                  if(cent3.lt.0.) then
+                    tryxyz(j,3)=tryxyz(j,3)+float(max(1,1-&
+                      int(tryxyz(j,3))/int(box(3))))*box(3)
+                  endif
+                  if(cent1.gt.box(1)) then
+                    tryxyz(j,1)=tryxyz(j,1)-float(max(1,&
+                      int(tryxyz(j,1))/int(box(1))))*box(1)
+                  endif
+                  if(cent2.gt.box(2)) then
+                    tryxyz(j,2)=tryxyz(j,2)-float(max(1,&
+                      int(tryxyz(j,2)))/int(box(2)))*box(2)
+                  endif
+                  if(cent3.gt.box(3)) then
+                    tryxyz(j,3)=tryxyz(j,3)-float(max(1,&
+                      int(tryxyz(j,3)))/int(box(3)))*box(3)
+                  endif
+                enddo
               endif
-              if(attempt.ge.50) exit outer
+              if(attempt.ge.(5*newatoms)) then
+                warn=.true.
+                exit outer
+              endif
             enddo
           endif
         enddo outer
 ! move molecules away from ones that are too close, but can't be removed
-! it's got 50 tries (rotations and/or translations) to move the molecule away
+! it's got 5x the number of atoms added actions (rotations and/or translations) to move the molecule away
 
         if(.not.mute)&
             write(1,*) "removing molecules..."
@@ -765,6 +844,37 @@
       if(.not.mute)&
             write(1,*) "writing output files..."
 
+      inquire(file=outbox,exist=ential)
+
+      if(ential) then
+! make a backup of the output coordinate file if it already exists
+! backup will be called #outbox.n#
+        boxfile=outbox
+        i=0
+        do
+          i=i+1
+          if(i.gt.99) then
+            if(.not.mute) &
+              write(1,*) "will not keep more than 99 backups"
+              exit
+            endif
+          write(str,'(i2)') i
+          str=adjustl(str)
+          boxfile="#"//trim(outbox)//"."//trim(str)//"#"
+          inquire(file=boxfile,exist=ential)
+          if(.not.ential) then
+            if(.not.mute) &
+              write(1,*) "backing up ",trim(outbox)," to ",&
+                trim(boxfile)
+            str="echo 'cp "//trim(outbox)//" \"//trim(boxfile)//&
+            " ; exit' | bash"
+            lugicul=system(str)
+            exit
+          endif
+        enddo
+      endif
+
+
       open(9,file=outbox)
       outbox=adjustr(outbox)
       fo=outbox(87:90)
@@ -779,21 +889,51 @@
         molres=adjustl(molres)
       endif
       open(11,file=outtop)
-      
+       
       inquire(file=topfile,exist=ential)
       if(ential) then
-        open(10,file=topfile)
-
-        do
-          read(10,'(a)',iostat=ios) str
-          write(11,'(a)') str
-          str=adjustl(str)
-          if(str.eq."[ molecules ]".or.ios.ne.0) exit
-        enddo
+        if(outtop.eq.topfile) then
+! if the input and output topologies are the same, copy to old one to
+! #topology.n#
+          i=0
+          do
+            i=i+1
+            if(i.gt.99) then
+              if(.not.mute) &
+                write(1,*) "will not keep more than 99 backups"
+                exit
+              endif
+            write(str,'(i2)') i
+            str=adjustl(str)
+            topfile="#"//trim(topfile)//"."//trim(str)//"#"
+            inquire(file=topfile,exist=ential)
+            if(.not.ential) then
+              if(.not.mute) &
+                write(1,*) "backing up ",trim(outtop)," to ",&
+                  trim(topfile)
+              str="echo 'cp "//trim(outtop)//" \"//trim(topfile)//&
+              " ; exit' | bash"
+              lugicul=system(str)
+              open(10,file=topfile)
+            
+              do
+                read(10,'(a)',iostat=ios) str
+                write(11,'(a)') str
+                str=adjustl(str)
+                if(str.eq."[ molecules ]".or.ios.ne.0) exit
+              enddo
 
 ! copy everything from the old topology up until [ molecules ]
 
-        close(10)
+              close(10)
+
+              exit
+            else
+              topfile=outtop
+            endif
+          enddo
+        endif
+
       else
         write(11,'(a)') '[ molecules ]'
       endif
@@ -867,6 +1007,12 @@
       if(allocated(delgroups)) deallocate(delgroups)
 ! make sure things are deallocated, even if things are messed up
 
+      if(.not.mute) then
+        if(warn)&
+          write(1,*) 'check output files; ',&
+            'some molecules may have extremely close contacts'
+      endif
+
       if(.not.mute) &
             write(1,'(a4,1x,f10.4,a1)') 'took',whattimeisit,'s'
 
@@ -879,8 +1025,10 @@
 
       if(brexit.ne.0) then
         stop 1
+      ! somebody messed up
       else
         stop 0
+      ! exit gracefully
       endif
 
       end program catnip
