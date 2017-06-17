@@ -59,19 +59,8 @@ if starting:
 # k i'm actually not very sure
 # only like 75% sure
     pid=getpid()
-    sleep(float(int(jobid) % 10) + 1.0)
-    sleep(float(pid % 10) + 0.5)
-    if not getenv('whospynning',False):
-        environ['whospynning']='-1'
-    while environ['whospynning'] != '-1':
-        sleep(7)
-    while environ['whospynning'] != str(jobid):
-        sleep(3)
-        environ['whospynning'] = str(jobid)
-    sleep(2)
-    while environ['whospynning'] != str(jobid):
-        sleep(1)
-        environ['whospynning'] = str(jobid)
+    sleep(float(int(jobid) % 10) + 1.5)
+    sleep(2*float(pid % 10) + 10)
 # sleep if another instance of the program is running on the host
 
     flags=[' ']
@@ -86,7 +75,6 @@ if starting:
         for i in range(1,33):
             l=getline('/home/scha0275/.pinning/'+nodename,i)
             exec l.strip()
-            print l.strip()
 # file should only have 32 lines which is a list of what's currently pinned 
 # mypins=[['63214'],...['unpinned']]
 #            ^job id          ^ not pinned; index is processor id or whatever it's called \_('')_/ 
@@ -236,20 +224,8 @@ if starting:
     starting=False
 
 if starting is False:
-    if not getenv('whospynning',False):
-        environ['whospynning']='-1'
-    while environ['whospynning'] != '-1':
-        sleep(7)
-    while environ['whospynning'] != str(jobid):
-        sleep(1)
-        environ['whospynning'] = str(jobid)
-    sleep(1)
-    while environ['whospynning'] != str(jobid):
-        sleep(1)
-        environ['whospynning'] = str(jobid)
     
+    pid=getpid()
+    sleep(float(int(jobid) % 10) + 0.5)
+    sleep(2*float(pid % 10) + 10)
     system('sed -i -e "s/'+"'"+str(jobid)+"'"+'/'+"'"+"unpinned"+"'"+'/g" /home/scha0275/.pinning/'+nodename)
-
-    environ['whospynning'] = str(-1)
-
-#list the procs as available when done
