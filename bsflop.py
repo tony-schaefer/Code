@@ -22,6 +22,8 @@ xi=[-coord for coord in xi]
 
 pmf=[val-pmf[len(pmf)-1] for val in pmf]
 
+err.reverse()
+
 i=0
 
 while i < len(pmf):
