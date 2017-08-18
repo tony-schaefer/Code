@@ -5,9 +5,10 @@
       integer itime,ftime,charform,natom,clspec,anum,mnum,status,
      +handle(4)
       real dxy,maxi(3),box(6)
-      real,allocatable:: x(:),y(:),z(:),color(:,:,:),xyz(:),vol(:)
+      real,allocatable:: x(:),y(:),z(:),xyz(:)
       double precision cxy,cz
-      double precision,allocatable:: zbin(:),xybin(:)
+      double precision,allocatable:: zbin(:),xybin(:), color(:,:,:),
+     +vol(:)
       character agroup*60,str*80,infile*300,outfile*80,header*300,ares*4
      +,ndxfile*300,framefile*300,group*60,formut*3,hex*7,catres(100)*4
      +,mol(3)*4,os(20)*4
@@ -145,6 +146,7 @@ c find clspec
        allocate(xyz(3*natom),mres(natom))
        do i=1,natom
         read(11,96) mres(i)
+        mres(i)=adjustl(mres(i))
        enddo
        call f77_molfile_init
        call f77_molfile_open_read(handle(1),natom,infile,'xtc')
@@ -216,7 +218,7 @@ c quitting time
 c find bin sizes 
         sols=0.
         do i=1,natom
-         if(mres(i).eq.'SOL') then
+         if(mres(i).eq.'SOL'.or.mres(i).eq.'WAT') then
           souls=souls+z(i)
           sols=sols+1.
          endif
@@ -290,32 +292,29 @@ c crude way to define water CoM
          if(rxy.ge.xybin(n-1).and.rxy.lt.xybin(n)) then
           do m=1,nzbins
            if(dz.ge.zbin(m-1).and.dz.lt.zbin(m)) then
-            if(mres(i).eq.'SOL') then
+            if(mres(i).eq.'SOL'.or.mres(i).eq.'WAT') then
 c water is blue, ammonium is green
-             color(m,n,1)=color(m,n,1)+1.
-             color(m,n,2)=color(m,n,2)+1.
-             color(m,n,3)=color(m,n,3)+0.
+             color(m,n,1)=color(m,n,1)+dble(1)
+             color(m,n,2)=color(m,n,2)+dble(1)
+             color(m,n,3)=color(m,n,3)+dble(0)
              if(mol(3).eq.'N/A') mol(3)=mres(i)
              exit
             endif
             do l=1,20
               if(mres(i).eq.os(l)) then
-               color(m,n,1)=color(m,n,1)+0.
-               color(m,n,2)=color(m,n,2)+1.
-               color(m,n,3)=color(m,n,3)+1.
+               color(m,n,1)=color(m,n,1)+dble(0)
+               color(m,n,2)=color(m,n,2)+dble(1)
+               color(m,n,3)=color(m,n,3)+dble(1)
                if(mol(1).eq.'N/A') mol(1)=mres(i)
                exit
               endif
             enddo
-            do l=1,20 
-             if(mres(i).eq.catres(l)) then
-              color(m,n,1)=color(m,n,1)+1.
-              color(m,n,2)=color(m,n,2)+0.
-              color(m,n,3)=color(m,n,3)+1.
-              if(mol(2).eq.'N/A') mol(2)=mres(i)
-              exit
-             endif
-            enddo
+            if(any(mres(i).eq.catres)) then
+             color(m,n,1)=color(m,n,1)+dble(1)
+             color(m,n,2)=color(m,n,2)+dble(0)
+             color(m,n,3)=color(m,n,3)+dble(1)
+             if(mol(2).eq.'N/A') mol(2)=mres(i)
+            endif
             exit
            endif
           enddo
@@ -332,7 +331,7 @@ c water is blue, ammonium is green
       enddo
 
       do m=1,nzbins
-       do n=1,nxybins
+       do n=2,nxybins
         do j=1,3
          color(m,n,j)=(color(m,n,j)/(clock*vol(n)))
          if(color(m,n,j).gt.maxi(j)) then
@@ -369,9 +368,12 @@ c fancy-shmancy rtw formatting stuff
        do n=2,nxybins
         do j=1,3
          color(m,n,j)=255.-1.0*maxi(j)*color(m,n,j)
-         if(color(m,n,j).lt.0.) color(m,n,j)=0.
-         if(color(m,n,j).gt.255.) color(m,n,j)=255.
+         if(color(m,n,j).lt.0.) color(m,n,j)=dble(0)
+         if(color(m,n,j).gt.255.) color(m,n,j)=dble(255)
         enddo
+        if(any(color(m,n,:).lt.0).or.any(color(m,n,:).gt.255)) then
+          print*, 'hi'
+        endif
         call rgbhex(color(m,n,1),color(m,n,2),color(m,n,3),hex)
         write(10,*) comz-zbin(m)-cz/2.,xybin(n)-cxy/2.,hex
 c write stuff
@@ -394,7 +396,7 @@ c write stuff
 
       subroutine rgbhex(r,g,b,hexagon)
 
-      real r,g,b
+      double precision r,g,b
       character base16(0:15)*1,hexagon*7
 
       base16(0)='0'
@@ -414,12 +416,11 @@ c write stuff
       base16(14)='E'
       base16(15)='F'
 
-      hexagon='#'//base16(int(mod((r/16.),16.)))//base16(int(
-     +mod(r,16.)))//base16(int(mod((g/16.),16.)))//base16(int(
-     +mod(g,16.)))//base16(int(mod((b/16.),16.)))//base16(int(
+      hexagon='#'//base16(floor(mod((r/16),16.)))//base16(floor(
+     +mod(r,16.)))//base16(floor(mod((g/16),16.)))//base16(floor(
+     +mod(g,16.)))//base16(floor(mod((b/16),16.)))//base16(floor(
      +mod(b,16.)))
 
       return
 
       end subroutine
-
