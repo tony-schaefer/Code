@@ -1,10 +1,14 @@
       program cl_process
       
       !ifort dirutil.f -Tf cl-process.f95 -free -Ofast -o cl-process.e -ldl -lstdc++ libxtc.a 
-      !gfortran dirutil.f cl-process.f95 -Ofast -o cl-process.e -ldl -lstdc++ libxtc.a 
+      !gfortran gro-dirutil.f cl-process.f95 -Ofast -o cl-process.e -ldl -lstdc++ libxtc.a
+      !!! might need to change system functions to calls for gfortran
       
       !dirutil is a custom thing that can give you a list of files in a
       !directory
+
+      !this is intented to be run the directory above the thing that was
+      !pulled
 
       use IFPORT
       !comment out if not using ifort
@@ -20,27 +24,25 @@
       real,allocatable:: xyz(:)
       logical:: direx,filex,ential
       
-      d='.'
+      d='../pull/'
 
       call numfiles(i,d)
-      !dirutils call to get the number of files in ../nvt
+      !dirutils call to get the number of files in ../pull
       allocate(files(i))
 
       call listdir(files,d,i)
-      !dirutils call to get the list of files in ../nvt
+      !dirutils call to get the list of files in '../pull'
       m=1
       ms=-1
 
       do k=1,i
-        filename=trim(files(k))//'/confout.gro'
+        filename='../pull/'//trim(files(k))//'/confout.gro'
         inquire(file=filename, exist=ential)
+        ! check to see if ../pull/pull-n/confout.gro exists
         if(ential) then
           print*, trim(filename)
         endif
       enddo
-
-      !find the output file of the nvt equilibration
-      !it's assumed that this will be the largest gro file
 
       deallocate(files)
 
@@ -50,14 +52,17 @@
       aclspec=adjustl(aclspec)
       !ask what cl to process
 
-      filename='pull-'//trim(aclspec)//'/confout.gro'
+      filename='../pull/pull-'//trim(aclspec)//'/confout.gro'
 
       open(6,file=filename)
+      ! open this gro file
 
       wats=0.
       com=0.
       read(6,'(a)') trashstr
       read(6,*) natoms
+      ! use this gro file to approximate the location of the center of
+      ! mass of the water layer
       allocate(molnum(natoms),molres(natoms),atres(natoms),&
         xyz(3*natoms))
       do i=1,natoms
@@ -69,6 +74,7 @@
         endif
       enddo
       com=10.0*com/real(wats)
+      ! convert to A from nm
       !read molecule names and stuff, print if there's a CL
 
       trashint=1
@@ -76,7 +82,9 @@
       write(trashstr,'(i2)') trashint
       trashstr=adjustl(trashstr)
       inquire(directory='../'//trim(trashstr)//'-windows',exist=direx)
-      !check to see if n-windows exists; n=5,6,7...
+      !check to see if n-windows exists; n=1,2,3,5,6,7...
+      ! can only get to 99
+      ! rip #4
       if(.not.direx) then
         windir='../'//trim(trashstr)//'-windows'
         print*, 'mkdir '//trim(windir)
@@ -87,7 +95,9 @@
       enddo
       !make new n-windows directory
 
-      print*, 'cp ../pull/pull-'//aclspec//'/Run.tpr .'
+      !print*, 'cp ../pull/pull-'//aclspec//'/Run.tpr .'
+      ! i don't need no tpr files no more cuz i read right from the xtc
+      ! file
       print*, 'cp ../pull/pull-'//aclspec//'/traj_comp.xtc .'
       trashint=system('cp ../pull/pull-'//aclspec//'/traj_comp.xtc .')
       !copy stuff here from the pull directory
@@ -97,8 +107,9 @@
       call f77_molfile_open_read(handle(1),natoms,str,'xtc')
       
       dist=2.15
-      !space windows 2.15 nm (2.15 A) apart (xtc file is angstroms)
+      !space windows 0.215 nm (2.15 A) apart (xtc file is angstroms)
       iwin=1
+      ! window number
       k=-1
 
 !warning: wall of strings follows
@@ -115,6 +126,8 @@
         endif
         if(old.lt.abs(com-65.0)) then
           cycle
+          ! cycle if the chloride is more than 6.5 nm from the
+          ! water com
         endif
         if(abs(xyz(3*clspec)-old).gt.dist) then
         ! if the cl has moved far enough ...
@@ -127,11 +140,13 @@
           ! WHAM has trouble with data that crosses the boundary
           ! anyways, don't need it
           print*,'making window',iwin,xyz(3*clspec)
-          old=xyz(3*clspec)
+          old=xyz(3*clspec) 
+          ! new old position of chloride
           write(trashstr,'(i2,a1,i5)') iwin,'-',clspec
           trashstr=adjustl(trashstr)
           trashstr='window-'//trim(trashstr)
           trashstr=adjustl(trashstr)
+          ! name of new window subdirectory
           print*,'mkdir '//trim(windir)//'/'//trim(trashstr)
           trashint=system('mkdir '//trim(windir)//'/'//&
           &trim(trashstr))
@@ -141,6 +156,7 @@
           open(7,file=trim(windir)//'/'//&
             trim(trashstr)//'/'//'input.gro')
           write(7,'(a,i5)') 'Input t=',k
+          ! put the fram number in the header
           write(7,'(i5)') natoms
           do i=1,natoms
             write(7,99) &
@@ -164,6 +180,7 @@
           ! copy necessary stuff to new window directory
           iwin=iwin+1
         endif
+        if(iwin.gt.99) exit
       enddo
       
 97    if(allocated(molnum)) deallocate(molnum,molres,atres,xyz)
