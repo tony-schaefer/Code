@@ -1,13 +1,18 @@
       program how_dense_something_is
 
-!     ifort -Ofast -o densiness.e densiness.f -ldl -lstdc++ libxtc.a 
+!     ifort -Ofast gromacs-things.f90 -o densiness.e densiness.f -ldl -lstdc++ libxtc.a 
 
-      integer charform,ires,natom,bins,rezidoos,itime,ftime,idumm,ax,
-     +handle(4),status
+      use bromacs
+
+      implicit none
+
+      integer charform,natom,bins,rezidoos,itime,ftime,idumm,ax,
+     +handle(4),status, ires,i,j,k,l,m,n,o,ios
+      integer, allocatable:: g(:),iatom(:)
       character header*150,adummy*150,str*80,axis*1,formut*3,
-     +outfile*80,infile*300,framefile*300
+     +outfile*80,infile*300,framefile*300,specform*3,ndx*90,gr*90
       character,allocatable:: mol(:)*4,ares(:)*4,atsym(:)*4
-      real box(6)
+      real box(6),timestep,clock,sols,comxyz
       real,allocatable:: amass(:),axyz(:,:),xyz(:)
       double precision vol,dxyz
       double precision,allocatable:: bin(:),rho(:,:)
@@ -21,6 +26,8 @@ c start finding densities
       axis="z"
       ios=0
       framefile=" "
+      gr='-1'
+      ndx='-1'
 
       if(iargc().eq.0) then
        print*,'use -f to specify filename'
@@ -60,9 +67,11 @@ c start finding densities
         print*," -ftime : (-1) final time"
         print*," -f     : input .gro/.pdb/.xtc trajectory; non-ASCII
      + must use -s option"
-        print*," -s     : input .gro system frame"
+        print*," -s     : input .gro/.pdb system frame"
         print*," -o     : (densities.dat) output densities"
         print*," -axis  : (z) find density on x, y, or z axis"
+        print*," -g     : additional group from index file (hella slow)"
+        print*,"-ndx    : index file"
         goto 97
        endif
 
@@ -78,6 +87,14 @@ c start finding densities
         call getarg(i+1,framefile)
        endif
 
+       if(str.eq.'-ndx') then
+         call getarg(i+1,ndx)
+       endif
+
+       if(str.eq.'-g') then
+         call getarg(i+1,gr)
+       endif
+      
       enddo
 
       infile=adjustr(infile)
@@ -99,40 +116,83 @@ c bin marks the boundry of each section; rho is the density of each type
 c of molecule found for each of the sections; mol is the name of each
 c type of molecule
       
-      if(formut.eq.'xtc') then
-       if(framefile.eq.' ') then
-        print*,'must use -s with an xtc file'
-        print*,'use -h for help'
-        goto 97
-       endif
-       open(10,file=framefile)
-       read(10,*) header
-       read(10,*) natom
-       allocate(ares(0:natom),atsym(0:natom),xyz(3*natom))
-       do i=1,natom
-        read(10,96) ares(i),atsym(i)
-       enddo
-      call f77_molfile_init
-      call f77_molfile_open_read(handle(1),natom,infile,'xtc')
-      close(10)
-      endif
-
-
-      if(axis.eq.'x') ax=1
-      if(axis.eq.'y') ax=2
-      if(axis.eq.'z') ax=3
-
       do n=1,99
        mol(n)="    "
        do j=1,bins
        rho(n,j)=0. 
        enddo
       enddo
+     
+      if(formut.eq.'xtc') then
+       if(framefile.eq.' ') then
+        print*,'must use -s with an xtc file'
+        print*,'use -h for help'
+        goto 97
+       endif
+       framefile=adjustr(framefile)
+       specform=framefile(298:300)
+       framefile=adjustl(framefile)
+       open(10,file=framefile)
+       if(specform.eq.'gro') then
+         read(10,*) header
+         read(10,*) natom
+         allocate(iatom(0:natom),ares(0:natom),atsym(0:natom),
+     +            xyz(3*natom))
+         do i=1,natom
+          read(10,96) ares(i),atsym(i),iatom(i)
+         enddo
+       elseif(specform.eq.'pdb') then
+         natom=0
+         do
+           read(10,*,iostat=ios) str
+           if(ios.ne.0) exit
+           if(str(1:4).eq.'ATOM'.or.str(1:6).eq.'HETATM') then
+             natom=natom+1
+           endif
+         enddo
+         allocate(iatom(0:natom),ares(0:natom),atsym(0:natom),
+     +            xyz(3*natom))
+         rewind(10)
+         i=0
+         do   
+          read(10,'(a80)',iostat=ios) str
+          if(ios.ne.0) exit
+          if(str(1:4).eq.'ATOM'.or.str(1:6).eq.'HETATM') then
+           i=i+1
+           if(i.gt.natom) exit
+           read(str,98) iatom(i),atsym(i),ares(i),ires,(xyz(j),j=1,3)
+          endif
+         enddo
+       endif
+       call f77_molfile_init
+       call f77_molfile_open_read(handle(1),natom,infile,'xtc')
+       close(10)
+      endif
+
+
+      rezidoos=0
+      if(gr.ne.'-1') then
+        if(ndx.eq.'-1') then
+          print*, "specify an index file if you're going to use a group"
+          goto 97
+        endif
+        gr=adjustl(gr)
+        call readndx(ndx,gr,g)
+        ! read group from index file
+        o=size(g)
+        if(o.eq.0) goto 97
+        mol(1)=adjustl(gr)
+        rezidoos=1
+      endif
+
+      if(axis.eq.'x') ax=1
+      if(axis.eq.'y') ax=2
+      if(axis.eq.'z') ax=3
+
 c initialize variables
 
       clock=0.
       k=0
-      rezidoos=0
       comxyz=0.
       sols=0.
 c clock counts the number of times densities are found so they can be
@@ -153,13 +213,14 @@ c rezidoos is how many different types of molecules are found
        natom=0
        do
         read(9,*) str
-        if(str.eq.'ATOM') natom=natom+1
+        if(str.eq.'ATOM'.or.str.eq.'HETATM') natom=natom+1
         if(str.eq.'ENDMDL') exit
        enddo
       endif
 c figure out how to read the timestep
 
       rewind(9)
+      ios=0
 
       do
        k=k+1
@@ -177,7 +238,7 @@ c read how many atoms their are
 
        if(k.eq.1) allocate(axyz(0:natom,3),amass(0:natom))
        if(k.eq.1.and.formut.ne.'xtc') then
-        allocate (ares(0:natom),atsym(0:natom))
+        allocate (ares(0:natom),atsym(0:natom),iatom(0:natom))
         timestep=0.
        endif
        
@@ -190,7 +251,7 @@ c read how many atoms their are
          if(formut.eq.'gro') then
           i=i+1
           if(i.gt.natom) exit
-          read(9,99) ires,ares(i),atsym(i),iatom,(axyz(i,j),j=1,3)
+          read(9,99) ires,ares(i),atsym(i),iatom(i),(axyz(i,j),j=1,3)
          elseif(formut.eq.'pdb') then
           read(9,'(a80)',iostat=ios) str
           if(i.gt.natom) exit
@@ -206,9 +267,10 @@ c read how many atoms their are
           if(str(1:4).eq.'ATOM') then
            i=i+1
            if(i.gt.natom) exit
-            read(str,98) iatom,atsym(i),ares(i),ires,(axyz(i,j),j=1,3)
+            read(str,98) iatom(:),atsym(i),ares(i),ires,
+     +                   (axyz(i,j),j=1,3)
           endif
-          elseif(formut.eq.'xtc') then
+         elseif(formut.eq.'xtc') then
            i=i+1
            if(i.gt.natom) exit
            if(i.eq.1) then
@@ -290,10 +352,19 @@ c section boundries
          if(axyz(i,ax).le.0.) axyz(i,ax)=axyz(i,ax)+box(ax)
          if(axyz(i,ax).ge.box(ax)) axyz(i,ax)=axyz(i,ax)-box(ax)
          do n=1,rezidoos
+         if(gr(1:4).eq.mol(n)) then
+          ! find density of special group
+          do m=1,o
+           if(g(m).eq.iatom(i)) then
+            if(axyz(i,ax).gt.bin(j-1).and.axyz(i,ax).le.bin(j)) then
+             rho(n,j)=rho(n,j)+amass(i)
+            endif
+           endif
+          enddo
+         endif
           if(ares(i).eq.mol(n)) then
            if(axyz(i,ax).gt.bin(j-1).and.axyz(i,ax).le.bin(j)) then
             rho(n,j)=rho(n,j)+amass(i)
-            exit
            endif
           endif
          enddo
@@ -390,9 +461,10 @@ c write density stuff
 
       if(formut.eq.'xtc') call f77_molfile_finish
 
-      deallocate(bin,rho,mol,axyz,amass,ares,atsym)
+      deallocate(bin,rho,mol,axyz,amass,ares,atsym,iatom)
+      if(allocated(g)) deallocate(g)
 
-96    format(5x,a4,2x,a4)
+96    format(5x,a4,2x,a4,i5)
 97    i=1
 98    format(7x,i5,1x,a4,a4,1x,i5,4x,3(1x,f7.3))
 99    format(i5,a4,2x,a4,i5,3(2x,f6.3))
