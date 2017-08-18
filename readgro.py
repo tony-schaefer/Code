@@ -44,3 +44,44 @@ def growrite(filename,info):
         return True
     except:
         return False
+
+def pdbread(filename,frame): #read frame from gro trajectory
+    '''pdbread(filename, frame number), returns dictionary if frame is read successfully, False otherwise\n The dictionary contains:\n natoms:number of atoms \n molnum:list of molecule numbers \n molres:list of molecule names \n atres:list of atom names \n atnum:list of atom numbers \n xyz:list of position vectors in nm (as a list of lists) \n box: CRYST1 info'''
+    outstuff={"natoms":0,"molnum":[],"molres":[],"atres":[],"atnum":[],"xyz":[],"box":[0.,0.,0.]} #initialize output dictionary
+    
+    with open(filename,'r') as pdb:
+        lines=pdb.readlines()
+
+    ends=[]
+    for i,line in enumerate(lines):
+        if line.startswith('END'):
+            ends.append(i)
+
+    if len(ends) <= 1:
+        ends=[0,len(lines)-1]
+
+    outstuff['natoms']=0
+
+    try:
+        for line in lines[ends[frame]:ends[frame+1]]:
+            if line.startswith('ATOM') or line.startswith('HETATM'):
+                outstuff['natoms']+=1
+                outstuff["atnum"].append(int(line[6:11]))
+                outstuff["atres"].append(line[13:16])
+                outstuff["molres"].append(line[17:20])
+                outstuff["molnum"].append(int(line[22:26]))
+                outstuff["xyz"].append([float(j)/10.0 for j in line[32:54].split()])
+        
+            if line.startswith('CRYST'):
+                outstuff["box"]=[j for j in line.strip().split()[1:]] # get box dimensions 
+                for i,tem in enumerate(outstuff["box"]):
+                    try:
+                        outstuff["box"][i]=float(tem)
+                    except:
+                        pass
+
+        return outstuff
+    
+    except:
+        return False # return False if something doesn't work
+

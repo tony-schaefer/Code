@@ -143,5 +143,5 @@ mol2file.close()
 
 extra=["rezp.in","rezp.out","rezp.pch","rezp.chg",esp+".dat"]
 
-for afile in extra:
-    os.remove(afile)
+#for afile in extra:
+#    os.remove(afile)
