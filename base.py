@@ -3,6 +3,10 @@
 import sys
 
 def chbase(b1,b2,innum):
+    """chbase( starting base, final base, number in starting base)
+        for bases 1-10, Arabic numerals are used
+        for bases 11-36, the uppercase ISO basic Latin alphabet is added
+        for bases 37-62, the lowercase ISO basic Latin alphabet is added"""
     numbers=['0','1','2','3','4','5','6','7','8','9','A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z','a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z']
     
     if innum.startswith('-'):
@@ -66,11 +70,13 @@ def chbase(b1,b2,innum):
 
     return bg
 
-print 'enter starting base'
-b1=int(raw_input(''))
-print 'enter a number in that base'
-innum=raw_input('')
-print 'enter target base'
-b2=int(raw_input(''))
+if __name__ == "__main__":
 
-print innum+' in base '+str(b1)+' is '+chbase(b1,b2,innum)+' in base '+str(b2)
+    print 'enter starting base'
+    b1=int(raw_input(''))
+    print 'enter a number in that base'
+    innum=raw_input('')
+    print 'enter target base'
+    b2=int(raw_input(''))
+
+    print innum+' in base '+str(b1)+' is '+chbase(b1,b2,innum)+' in base '+str(b2)
