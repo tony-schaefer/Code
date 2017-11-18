@@ -7,7 +7,18 @@
 ! tested
 ! ifort gromacs-things.f90 -Tf catnip.f95 -free -Ofast -o catnip.e -fpe0
 ! gfortran gromacs-things.f90 catnip.f95 -Ofast -o catnip.e
-      
+     
+! known bugs
+! 1. molecules can be deleted even if they are not flagged as deletable
+!      this happens because the input coordinate file might not have the
+!      molecules numbered off like I'd expect
+!      it happens more with packmol files because those double down on
+!      molecule numbers, and assumes the sequence letter will be enough
+!      to differentiate them, but I don't pay much attention to the
+!      sequence
+!      I'll fix it eventually
+!      maybe
+
       use bromacs
 ! bromacs is a custom module that has a subroutine for reading index
 ! files; it's in gromacs-things.f90
@@ -174,7 +185,6 @@
           &file into another")
         write(1,'(a)') trim(str)
         str=adjustl("")
-        write(1,'(a)') trim(str)
         write(1,'(a)') trim(str)
         str=adjustl("-c   : input system coordinate file (gro/pdb) to &
           &which molecules are added")
@@ -1000,9 +1010,9 @@
 ! new molecules
             do l=1,newatoms
               call sqdist(xyz(i,:),tryxyz(l,:),box,dist)
-              if(dist.lt.0.02) then
+              if(dist.lt.0.04) then
                 ! this is too close, get rid of this molecule
-                ! keep in mind, this is squared distance, so ~0.14 nm
+                ! keep in mind, this is squared distance, so ~0.2 nm
                 moldel=moldel+1
                 ! number of deleted molecules
                 catdel(moldel)=molnum(i)
